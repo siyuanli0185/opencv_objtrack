@@ -15,6 +15,7 @@
 #include <sstream>
 #include <string>
 #include <iostream>
+#include <fstream> //for saveXY
 #include <opencv\highgui.h>
 #include <opencv\cv.h>
 #include <math.h>
@@ -28,13 +29,15 @@ int S_MIN = 0;
 int S_MAX = 256;
 int V_MIN = 0;
 int V_MAX = 256;
+int PHOTO_ON = 1;
+int PHOTO_OFF = 0;
 //default capture width and height
-const int FRAME_WIDTH = 640;
-const int FRAME_HEIGHT = 480;
+const int FRAME_WIDTH = 1280;//640;
+const int FRAME_HEIGHT = 720;//480;
 //max number of objects to be detected in frame
 const int MAX_NUM_OBJECTS=50;
 //minimum and maximum object area
-const int MIN_SHAPE_DETECT_AREA = 100*100;
+const int MIN_SHAPE_DETECT_AREA = 2000;//100*100;
 const int MIN_OBJECT_AREA = 20*20;
 const int MAX_OBJECT_AREA = FRAME_HEIGHT*FRAME_WIDTH/1.5;
 //names that will appear at the top of each window
@@ -67,7 +70,8 @@ static double angle( Point pt1, Point pt2, Point pt0 )
     return (dx1*dx2 + dy1*dy2)/sqrt((dx1*dx1 + dy1*dy1)*(dx2*dx2 + dy2*dy2) + 1e-10);
 }
 
-void createTrackbars(){
+void createTrackbars()
+{
 	//create window for trackbars
     namedWindow(trackbarWindowName,0);
 	//create memory to store trackbar name on window
@@ -78,6 +82,7 @@ void createTrackbars(){
 	sprintf( TrackbarName, "S_MAX", S_MAX);
 	sprintf( TrackbarName, "V_MIN", V_MIN);
 	sprintf( TrackbarName, "V_MAX", V_MAX);
+	//sprintf( TrackbarName, "Photo", PHOTO_OFF);
 	//create trackbars and insert them into window
 	//3 parameters are: the address of the variable that is changing when the trackbar is moved(eg.H_LOW),
 	//the max value the trackbar can move (eg. H_HIGH), 
@@ -89,7 +94,17 @@ void createTrackbars(){
     createTrackbar( "S_MAX", trackbarWindowName, &S_MAX, S_MAX, on_trackbar );
     createTrackbar( "V_MIN", trackbarWindowName, &V_MIN, V_MAX, on_trackbar );
     createTrackbar( "V_MAX", trackbarWindowName, &V_MAX, V_MAX, on_trackbar );
+	createTrackbar( "Photo", trackbarWindowName, &PHOTO_OFF, PHOTO_ON, on_trackbar );
 }
+
+//void saveXY(int x_rbt, int y_rbt, int x_src, int y_src )
+////this function can save 
+//{
+//	ofstream myfile;
+//	myfile.open ("example.txt");
+//	myfile << "Writing this to a file.\n";
+//	myfile.close();
+//}
 
 void drawObject(int x, int y, Mat &frame)
 {
@@ -136,13 +151,21 @@ void morphOps(Mat &thresh)
 void shapeDetect(Mat &cameraFeed, vector< vector<Point> > contours)
 {
 		vector<Point> approx;
-		int x,y;
+		int x_sqr_last = -1;
+		int y_sqr_last = -1;
+		int x_circle_last = -1;
+		int y_circle_last = -1;
+		int x_sqr_curnt;
+		int y_sqr_curnt;
+		int x_circle_curnt;
+		int y_circle_curnt;
 
 		for (int i = 0; i < contours.size(); i++) 
 		{	
 			approxPolyDP(Mat(contours[i]), approx, arcLength(Mat(contours[i]), true)*0.02, true);
 			Moments moment = moments((cv::Mat)contours[i]);
 			double area = moment.m00;
+			//detection for square
 			if( approx.size() == 4 && area > MIN_SHAPE_DETECT_AREA && area < MAX_OBJECT_AREA && isContourConvex(Mat(approx)) )
 			{
 				double maxCosine = 0;
@@ -154,17 +177,41 @@ void shapeDetect(Mat &cameraFeed, vector< vector<Point> > contours)
 				}
 				if( maxCosine >= 0 && maxCosine < 0.3 )
 				{
-					x = moment.m10/area;
-					y = moment.m01/area;
+					x_sqr0 = moment.m10/area;
+					y_sqr0 = moment.m01/area;
 					const Point* p = &approx[0];
 					int n = (int)approx.size();
 				    polylines(cameraFeed, &p, &n, 1, true, Scalar(0,0,255), 100, CV_AA); //Scalar(B,G,R)
 			    }
 			}
-			else if( approx.size() == 3 && area > MIN_SHAPE_DETECT_AREA && area < MAX_OBJECT_AREA && isContourConvex(Mat(approx)) )
+			//detection for pentagon
+			//else if( approx.size() == 5 && area > MIN_SHAPE_DETECT_AREA && area < MAX_OBJECT_AREA && isContourConvex(Mat(approx)) )
+			//{
+			//	double maxCosine = 0;
+			//	int correctAngleCount = 0;
+   //             for( int j = 0; j < 5; j++ )
+   //             {
+   //                 // find the maximum cosine of the angle between joint edges
+   //                 double cosine = fabs(angle(approx[j], approx[(j+2)%5], approx[(j+1)%5]));
+			//		if( cosine >= -0.4226 && cosine <= 0 ) //-0.4226:115degree;0:90degree;
+			//		{
+			//			correctAngleCount++;
+			//		}
+			//	}
+			//	if( correctAngleCount == 5 )
+			//	{
+			//		x = moment.m10/area;
+			//		y = moment.m01/area;
+			//		const Point* p = &approx[0];
+			//		int n = (int)approx.size();
+			//	    polylines(cameraFeed, &p, &n, 1, true, Scalar(0,255,128), 100, CV_AA); //Scalar(B,G,R)
+			//	}
+			//}
+			//detection for circle
+			else if( approx.size() == 8 && area > MIN_SHAPE_DETECT_AREA && area < MAX_OBJECT_AREA && isContourConvex(Mat(approx)) )
 			{
-					x = moment.m10/area;
-					y = moment.m01/area;
+					x_circle = moment.m10/area;
+					y_circle = moment.m01/area;
 					const Point* p = &approx[0];
 					int n = (int)approx.size();
 				    polylines(cameraFeed, &p, &n, 1, true, Scalar(0,255,128), 100, CV_AA); //Scalar(B,G,R)
@@ -266,7 +313,7 @@ int main(int argc, char* argv[])
 		//perform morphological operations on thresholded image to eliminate noise
 		//and emphasize the filtered object(s)
 		if(useMorphOps)
-		morphOps(threshold);
+			morphOps(threshold);
 		//pass in thresholded frame to our object tracking function
 		//this function will return the x and y coordinates of the
 		//filtered object
@@ -276,10 +323,14 @@ int main(int argc, char* argv[])
 		//show frames 
 		imshow(windowName2,threshold);
 		imshow(windowName,cameraFeed);
+		if (PHOTO_OFF == 1)
+		{
+			imwrite("D:/OpenCV/openCV_studio/clrfiltr/ImgCptr2.jpg",cameraFeed);
+			PHOTO_OFF = 0;
+		}
 		//imshow(windowName1,HSV);
 
 		//delay 30ms so that screen can refresh.
-		//!!!image will not appear without this waitKey() command!!!
 		waitKey(30);
 	}
 
